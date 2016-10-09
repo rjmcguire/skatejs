@@ -1,20 +1,28 @@
-const CustomEvent = ((Event) => {
-  if (Event) {
+const Event = ((TheEvent) => {
+  if (TheEvent) {
     try {
-      new Event(); // eslint-disable-line no-new
+      new TheEvent('emit-init'); // eslint-disable-line no-new
     } catch (e) {
       return undefined;
     }
   }
-  return Event;
-})(window.CustomEvent);
+  return TheEvent;
+})(window.Event);
 
 function createCustomEvent(name, opts = {}) {
-  if (CustomEvent) {
-    return new CustomEvent(name, opts);
+  const { detail } = opts;
+  delete opts.detail;
+
+  let e;
+  if (Event) {
+    e = new Event(name, opts);
+    if (typeof detail !== 'undefined') {
+      Object.defineProperty(e, 'detail', { value: detail });
+    }
+  } else {
+    e = document.createEvent('CustomEvent');
+    e.initCustomEvent(name, opts.bubbles, opts.cancelable, detail);
   }
-  const e = document.createEvent('CustomEvent');
-  e.initCustomEvent(name, opts.bubbles, opts.cancelable, opts.detail);
   return e;
 }
 
@@ -24,6 +32,9 @@ export default function (elem, name, opts = {}) {
   }
   if (opts.cancelable === undefined) {
     opts.cancelable = true;
+  }
+  if (opts.composed === undefined) {
+    opts.composed = true;
   }
   return elem.dispatchEvent(createCustomEvent(name, opts));
 }

@@ -1,9 +1,11 @@
+/* eslint no-plusplus: 0 */
+
 import {
   applyProp,
   attributes,
   elementClose,
   elementOpen as idomElementOpen,
-  skip,
+  skip as idomSkip,
   symbols,
   text,
 } from 'incremental-dom';
@@ -99,7 +101,7 @@ const attributesContext = propContext(attributes, {
 
     // Boolean false values should not set attributes at all.
     if (value === false) {
-      return;
+      return applyDefault(elem, name);
     }
 
     // Handle built-in and custom events.
@@ -199,7 +201,7 @@ function wrapIdomFunc(func, tnameFuncHandler = noop) {
 
       if (func === elementClose) {
         if (skips === 1) {
-          skip();
+          idomSkip();
         }
 
         // We only want to skip closing if it's not the last closing tag in the
@@ -256,7 +258,8 @@ function stackClose(tname) {
   const chren = stackChren.pop();
   const props = tname[$stackCurrentHelperProps];
   delete tname[$stackCurrentHelperProps];
-  return tname(props, () => chren.forEach(args => args[0](...args[1])));
+  const elemOrFn = tname(props, () => chren.forEach(args => args[0](...args[1])));
+  return typeof elemOrFn === 'function' ? elemOrFn() : elemOrFn;
 }
 
 // Incremental DOM overrides
@@ -285,16 +288,17 @@ const newText = wrapIdomFunc(text);
 
 // Convenience function for declaring an Incremental DOM element using
 // hyperscript-style syntax.
-export function element(tname, attrs, chren) {
+export function element(tname, attrs, ...chren) {
   const atype = typeof attrs;
 
   // If attributes are a function, then they should be treated as children.
   if (atype === 'function' || atype === 'string' || atype === 'number') {
-    chren = attrs;
+    chren = [attrs];
   }
 
-  // Ensure the attributes are an object.
-  if (atype !== 'object') {
+  // Ensure the attributes are an object. Null is considered an object so we
+  // have to test for this explicitly.
+  if (attrs === null || atype !== 'object') {
     attrs = {};
   }
 
@@ -311,14 +315,28 @@ export function element(tname, attrs, chren) {
   // Close before we render the descendant tree.
   newElementOpenEnd(tname);
 
-  const ctype = typeof chren;
-  if (ctype === 'function') {
-    chren();
-  } else if (ctype === 'string' || ctype === 'number') {
-    newText(chren);
-  }
+  chren.forEach((ch) => {
+    const ctype = typeof ch;
+    if (ctype === 'function') {
+      ch();
+    } else if (ctype === 'string' || ctype === 'number') {
+      newText(ch);
+    }
+  });
 
   return newElementClose(tname);
+}
+
+// Even further convenience for building a DSL out of JavaScript functions or hooking into standard
+// transpiles for JSX (React.createElement() / h).
+export function builder(...tags) {
+  if (tags.length === 0) {
+    return (...args) => element.bind(null, ...args);
+  }
+  return tags.map(tag =>
+    (...args) =>
+      element.bind(null, tag, ...args)
+  );
 }
 
 // We don't have to do anything special for the text function; it's just a
